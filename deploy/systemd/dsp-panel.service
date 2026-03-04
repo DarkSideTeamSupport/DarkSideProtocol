@@ -1,0 +1,16 @@
+[Unit]
+Description=DarkSideProtocol Web Panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/darksideprotocol
+Environment=DSP_PANEL_CONFIG=/opt/darksideprotocol/configs/panel.json
+ExecStart=/opt/darksideprotocol/bin/dsp-panel
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

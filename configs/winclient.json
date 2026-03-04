@@ -1,0 +1,12 @@
+{
+  "server_tcp": "127.0.0.1:18443",
+  "server_public_key": "",
+  "client_private_key": "",
+  "client_public_key": "",
+  "key_file": "data/windows-client-key.json",
+  "profile_name": "default",
+  "device_name": "win10-11-x64",
+  "reconnect_sec": 3,
+  "ping_interval_sec": 3,
+  "handshake_timeout_sec": 5
+}

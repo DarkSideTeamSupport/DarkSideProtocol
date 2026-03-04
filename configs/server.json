@@ -1,0 +1,12 @@
+{
+  "listen_udp": ":18080",
+  "listen_tcp": ":18443",
+  "pre_shared_key": "change-me",
+  "server_private_key": "",
+  "server_public_key": "",
+  "max_packet_size": 1500,
+  "enable_obfs": true,
+  "enable_udp": true,
+  "enable_tcp": true,
+  "public_probe_mode": true
+}

@@ -1,0 +1,16 @@
+[Unit]
+Description=DarkSideProtocol Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/darksideprotocol
+Environment=DSP_SERVER_CONFIG=/opt/darksideprotocol/configs/server.json
+ExecStart=/opt/darksideprotocol/bin/dsp-server
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
