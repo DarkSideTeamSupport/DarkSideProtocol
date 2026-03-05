@@ -22,6 +22,7 @@ type HelloFrame struct {
 	ClientPublicKey string `json:"client_public_key"`
 	ClientNonce     string `json:"client_nonce"`
 	Timestamp       int64  `json:"timestamp"`
+	AuthTag         string `json:"auth_tag"`
 }
 
 type AckFrame struct {
@@ -35,16 +36,19 @@ type DataFrame struct {
 	Ciphertext string `json:"ciphertext"`
 }
 
-func NewHello(clientPublicKey string) (HelloFrame, []byte, error) {
+func NewHello(clientPublicKey string, preSharedKey string) (HelloFrame, []byte, error) {
 	nonce := make([]byte, 16)
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return HelloFrame{}, nil, err
 	}
+	timestamp := time.Now().Unix()
+	authTag := BuildHelloAuth(preSharedKey, clientPublicKey, nonce, timestamp)
 	return HelloFrame{
 		Type:            TypeHello,
 		ClientPublicKey: clientPublicKey,
 		ClientNonce:     base64.StdEncoding.EncodeToString(nonce),
-		Timestamp:       time.Now().Unix(),
+		Timestamp:       timestamp,
+		AuthTag:         authTag,
 	}, nonce, nil
 }
 
@@ -65,6 +69,32 @@ func ParseHello(payload []byte) (HelloFrame, []byte, error) {
 		return HelloFrame{}, nil, fmt.Errorf("invalid client nonce")
 	}
 	return h, nonce, nil
+}
+
+func BuildHelloAuth(preSharedKey string, clientPublicKey string, clientNonce []byte, timestamp int64) string {
+	mac := hmac.New(sha256.New, []byte(preSharedKey))
+	mac.Write([]byte("hello-v1"))
+	mac.Write([]byte(clientPublicKey))
+	mac.Write(clientNonce)
+	mac.Write([]byte(fmt.Sprintf("%d", timestamp)))
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func VerifyHelloAuth(preSharedKey string, h HelloFrame, clientNonce []byte) bool {
+	if preSharedKey == "" {
+		return true
+	}
+	want := BuildHelloAuth(preSharedKey, h.ClientPublicKey, clientNonce, h.Timestamp)
+	return hmac.Equal([]byte(want), []byte(h.AuthTag))
+}
+
+func ValidateTimestamp(ts int64, allowedSkewSec int64) bool {
+	now := time.Now().Unix()
+	diff := now - ts
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff <= allowedSkewSec
 }
 
 func BuildAck(sessionKey []byte, serverNonce []byte) AckFrame {

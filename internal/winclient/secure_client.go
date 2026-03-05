@@ -62,7 +62,7 @@ func (c *SecureTCPClient) runOneSession(ctx context.Context) error {
 }
 
 func (c *SecureTCPClient) doHandshake(conn net.Conn) ([]byte, error) {
-	hello, clientNonce, err := secureproto.NewHello(c.cfg.ClientPublicKey)
+	hello, clientNonce, err := secureproto.NewHello(c.cfg.ClientPublicKey, c.cfg.PreSharedKey)
 	if err != nil {
 		return nil, err
 	}

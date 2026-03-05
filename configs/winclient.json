@@ -1,5 +1,6 @@
 {
   "server_tcp": "127.0.0.1:18443",
+  "pre_shared_key": "change-me",
   "server_public_key": "",
   "client_private_key": "",
   "client_public_key": "",

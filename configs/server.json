@@ -5,6 +5,8 @@
   "server_private_key": "",
   "server_public_key": "",
   "max_packet_size": 1500,
+  "handshake_skew_sec": 120,
+  "session_idle_sec": 300,
   "enable_obfs": true,
   "enable_udp": true,
   "enable_tcp": true,

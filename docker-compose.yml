@@ -1,0 +1,26 @@
+services:
+  dsp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: dsp-server
+    restart: unless-stopped
+    ports:
+      - "18080:18080/udp"
+      - "18443:18443/tcp"
+    volumes:
+      - ./configs/server.json:/app/configs/server.json:ro
+
+  dsp-panel:
+    build:
+      context: .
+      dockerfile: Dockerfile.panel
+    container_name: dsp-panel
+    restart: unless-stopped
+    depends_on:
+      - dsp-server
+    ports:
+      - "2053:2053/tcp"
+    volumes:
+      - ./configs/panel.json:/app/configs/panel.json:ro
+      - ./data:/app/data

@@ -13,6 +13,8 @@ type ServerConfig struct {
 	ServerPrivateKey string `json:"server_private_key"`
 	ServerPublicKey  string `json:"server_public_key"`
 	MaxPacketSize   int    `json:"max_packet_size"`
+	HandshakeSkewSec int   `json:"handshake_skew_sec"`
+	SessionIdleSec   int   `json:"session_idle_sec"`
 	EnableObfs      bool   `json:"enable_obfs"`
 	EnableUDP       bool   `json:"enable_udp"`
 	EnableTCP       bool   `json:"enable_tcp"`
@@ -57,6 +59,12 @@ func LoadServerConfig(path string) (ServerConfig, error) {
 	}
 	if cfg.MaxPacketSize == 0 {
 		cfg.MaxPacketSize = 1500
+	}
+	if cfg.HandshakeSkewSec <= 0 {
+		cfg.HandshakeSkewSec = 120
+	}
+	if cfg.SessionIdleSec <= 0 {
+		cfg.SessionIdleSec = 300
 	}
 	if !cfg.EnableUDP && !cfg.EnableTCP {
 		cfg.EnableUDP = true

@@ -8,6 +8,7 @@ import (
 
 type Config struct {
 	ServerTCP        string `json:"server_tcp"`
+	PreSharedKey     string `json:"pre_shared_key"`
 	ServerPublicKey  string `json:"server_public_key"`
 	ClientPrivateKey string `json:"client_private_key"`
 	ClientPublicKey  string `json:"client_public_key"`
