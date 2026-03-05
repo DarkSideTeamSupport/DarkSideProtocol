@@ -1,9 +1,9 @@
 {
   "listen_udp": ":18080",
   "listen_tcp": ":18443",
-  "pre_shared_key": "change-me",
-  "server_private_key": "",
-  "server_public_key": "",
+  "pre_shared_key": "DarkSide-PSK-2026-Change-This-Long-Secret",
+  "server_private_key": "PK4IIRjn2wzQ2ArtuopyHMdbnC2gbd6RDbmuxCBXzZY=",
+  "server_public_key": "WcuQtipn/XpTwTeC/Ua32dPbSShcETZfT84unFhHbwo=",
   "max_packet_size": 1500,
   "handshake_skew_sec": 120,
   "session_idle_sec": 300,

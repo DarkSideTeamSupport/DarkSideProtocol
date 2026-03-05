@@ -3,4 +3,3 @@ web-ui/dist/
 data/
 bin/
 *.log
-configs/winclient_client.json
