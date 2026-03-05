@@ -5,9 +5,11 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 
 	"darksideprotocol/internal/config"
 	"darksideprotocol/internal/obfs"
+	"darksideprotocol/internal/transport/tcp"
 	"darksideprotocol/internal/transport/udp"
 )
 
@@ -16,15 +18,26 @@ type Server struct {
 	obfsCfg obfs.Config
 	connMu  sync.Mutex
 	conns   map[net.Conn]*connState
+	tunnel  tunnelDevice
 }
 
 type connState struct {
 	secureReady bool
 	sessionKey  []byte
 	lastSeen    time.Time
+	conn        net.Conn
+	writeMu     sync.Mutex
 }
 
 func New(cfg config.ServerConfig) (*Server, error) {
+	var tun tunnelDevice
+	var err error
+	if cfg.EnableTunnel {
+		tun, err = newTunnelDevice(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &Server{
 		cfg: cfg,
 		obfsCfg: obfs.Config{
@@ -33,6 +46,7 @@ func New(cfg config.ServerConfig) (*Server, error) {
 			MaxJitterMS: 15,
 		},
 		conns: make(map[net.Conn]*connState),
+		tunnel: tun,
 	}, nil
 }
 
@@ -45,6 +59,14 @@ func (s *Server) Run(ctx context.Context) error {
 		defer wg.Done()
 		s.reapIdleSessions(ctx)
 	}()
+
+	if s.tunnel != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.relayTunnelToClient(ctx)
+		}()
+	}
 
 	if s.cfg.EnableUDP {
 		wg.Add(1)

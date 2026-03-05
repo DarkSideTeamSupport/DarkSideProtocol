@@ -16,6 +16,7 @@ func (s *Server) getConnState(conn net.Conn) *connState {
 		return st
 	}
 	st = &connState{lastSeen: time.Now()}
+	st.conn = conn
 	s.conns[conn] = st
 	return st
 }
@@ -64,4 +65,15 @@ func (s *Server) dropIdleConnStates() {
 	for _, c := range toClose {
 		_ = c.Close()
 	}
+}
+
+func (s *Server) findSecureConnState() *connState {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	for _, st := range s.conns {
+		if st.secureReady && st.conn != nil {
+			return st
+		}
+	}
+	return nil
 }

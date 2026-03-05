@@ -2,17 +2,16 @@ FROM golang:1.22-alpine AS builder
 
 WORKDIR /src
 COPY go.mod ./
+COPY go.sum ./
 COPY cmd ./cmd
 COPY internal ./internal
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/dsp-server ./cmd/server
 
 FROM alpine:3.20
 WORKDIR /app
-RUN adduser -D -H -s /sbin/nologin dsp
+RUN apk add --no-cache iproute2 iptables
 COPY --from=builder /out/dsp-server /app/dsp-server
 COPY configs/server.json /app/configs/server.json
-RUN chown -R dsp:dsp /app
-USER dsp
 EXPOSE 18080/udp 18443/tcp
 ENV DSP_SERVER_CONFIG=/app/configs/server.json
 CMD ["/app/dsp-server"]

@@ -15,6 +15,11 @@ type ServerConfig struct {
 	MaxPacketSize   int    `json:"max_packet_size"`
 	HandshakeSkewSec int   `json:"handshake_skew_sec"`
 	SessionIdleSec   int   `json:"session_idle_sec"`
+	EnableTunnel     bool   `json:"enable_tunnel"`
+	TunnelName       string `json:"tunnel_name"`
+	TunnelServerCIDR string `json:"tunnel_server_cidr"`
+	TunnelSubnet     string `json:"tunnel_subnet"`
+	UpstreamInterface string `json:"upstream_interface"`
 	EnableObfs      bool   `json:"enable_obfs"`
 	EnableUDP       bool   `json:"enable_udp"`
 	EnableTCP       bool   `json:"enable_tcp"`
@@ -33,6 +38,8 @@ type ClientConfig struct {
 	TransportMode string `json:"transport_mode"`
 	TunName       string `json:"tun_name"`
 	TunCIDR       string `json:"tun_cidr"`
+	TunGateway    string `json:"tun_gateway"`
+	EnableTunnel  bool   `json:"enable_tunnel"`
 	EnableObfs    bool   `json:"enable_obfs"`
 }
 
@@ -66,6 +73,19 @@ func LoadServerConfig(path string) (ServerConfig, error) {
 	if cfg.SessionIdleSec <= 0 {
 		cfg.SessionIdleSec = 300
 	}
+	if cfg.TunnelName == "" {
+		cfg.TunnelName = "dsp0"
+	}
+	if cfg.TunnelServerCIDR == "" {
+		cfg.TunnelServerCIDR = "10.66.0.1/24"
+	}
+	if cfg.TunnelSubnet == "" {
+		cfg.TunnelSubnet = "10.66.0.0/24"
+	}
+	if !cfg.EnableTunnel {
+		// Default to tunnel mode for full VPN behavior.
+		cfg.EnableTunnel = true
+	}
 	if !cfg.EnableUDP && !cfg.EnableTCP {
 		cfg.EnableUDP = true
 		cfg.EnableTCP = true
@@ -85,7 +105,10 @@ func LoadClientConfig(path string) (ClientConfig, error) {
 		cfg.TunName = "dsp0"
 	}
 	if cfg.TunCIDR == "" {
-		cfg.TunCIDR = "10.77.0.2/24"
+		cfg.TunCIDR = "10.66.0.2/24"
+	}
+	if cfg.TunGateway == "" {
+		cfg.TunGateway = "10.66.0.1"
 	}
 	if cfg.KeyFile == "" {
 		cfg.KeyFile = "data/client-key.json"

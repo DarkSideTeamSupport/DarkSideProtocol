@@ -15,6 +15,10 @@ type Config struct {
 	KeyFile          string `json:"key_file"`
 	ProfileName      string `json:"profile_name"`
 	DeviceName       string `json:"device_name"`
+	EnableTunnel     bool   `json:"enable_tunnel"`
+	TunName          string `json:"tun_name"`
+	TunCIDR          string `json:"tun_cidr"`
+	TunGateway       string `json:"tun_gateway"`
 	ReconnectSec     int    `json:"reconnect_sec"`
 	PingIntervalSec  int    `json:"ping_interval_sec"`
 	HandshakeTimeout int    `json:"handshake_timeout_sec"`
@@ -40,6 +44,18 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if cfg.DeviceName == "" {
 		cfg.DeviceName = "win-client"
+	}
+	if !cfg.EnableTunnel {
+		cfg.EnableTunnel = true
+	}
+	if cfg.TunName == "" {
+		cfg.TunName = "DarkSideTunnel"
+	}
+	if cfg.TunCIDR == "" {
+		cfg.TunCIDR = "10.66.0.2/24"
+	}
+	if cfg.TunGateway == "" {
+		cfg.TunGateway = "10.66.0.1"
 	}
 	if cfg.ReconnectSec <= 0 {
 		cfg.ReconnectSec = 3

@@ -7,6 +7,10 @@
   "key_file": "data/windows-client-key.json",
   "profile_name": "default",
   "device_name": "win10-11-x64",
+  "enable_tunnel": true,
+  "tun_name": "DarkSideTunnel",
+  "tun_cidr": "10.66.0.2/24",
+  "tun_gateway": "10.66.0.1",
   "reconnect_sec": 3,
   "ping_interval_sec": 3,
   "handshake_timeout_sec": 5

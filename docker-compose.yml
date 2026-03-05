@@ -10,6 +10,12 @@ services:
       - "18443:18443/tcp"
     volumes:
       - ./configs/server.json:/app/configs/server.json:ro
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      - net.ipv4.ip_forward=1
 
   dsp-panel:
     build:

@@ -45,6 +45,9 @@ func (c *SecureTCPClient) runOneSession(ctx context.Context) error {
 		return err
 	}
 	log.Printf("secure session established with %s", c.cfg.ServerTCP)
+	if c.cfg.EnableTunnel {
+		return c.runTunnelSession(ctx, conn, sessionKey)
+	}
 	ticker := time.NewTicker(time.Duration(c.cfg.PingIntervalSec) * time.Second)
 	defer ticker.Stop()
 
@@ -96,6 +99,77 @@ func (c *SecureTCPClient) doHandshake(conn net.Conn) ([]byte, error) {
 }
 
 func (c *SecureTCPClient) secureRequest(conn net.Conn, sessionKey []byte, plain []byte) error {
+	if err := c.sendEncryptedPayload(conn, sessionKey, plain); err != nil {
+		return err
+	}
+	reply, err := c.readEncryptedPayload(conn, sessionKey, time.Duration(c.cfg.HandshakeTimeout)*time.Second)
+	if err != nil {
+		return err
+	}
+	log.Printf("server reply: %s", string(reply))
+	return nil
+}
+
+func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, sessionKey []byte) error {
+	dev, err := openTunnelDevice(c.cfg.TunName)
+	if err != nil {
+		return err
+	}
+	defer dev.Close()
+
+	name, err := dev.Name()
+	if err != nil {
+		return err
+	}
+	if err := configureTunnelInterface(name, c.cfg.TunCIDR, c.cfg.TunGateway); err != nil {
+		return err
+	}
+	log.Printf("tunnel interface ready: %s (%s)", name, c.cfg.TunCIDR)
+
+	errCh := make(chan error, 2)
+	go func() {
+		for {
+			pkt, err := dev.ReadPacket()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if len(pkt) == 0 {
+				continue
+			}
+			if err := c.sendEncryptedPayload(conn, sessionKey, pkt); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			pkt, err := c.readEncryptedPayload(conn, sessionKey, 60*time.Second)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if len(pkt) == 0 {
+				continue
+			}
+			if err := dev.WritePacket(pkt); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-errCh:
+		return err
+	}
+}
+
+func (c *SecureTCPClient) sendEncryptedPayload(conn net.Conn, sessionKey []byte, plain []byte) error {
 	ciphertext, err := secureproto.Encrypt(sessionKey, plain)
 	if err != nil {
 		return err
@@ -107,18 +181,21 @@ func (c *SecureTCPClient) secureRequest(conn net.Conn, sessionKey []byte, plain 
 	if err := tcp.WriteFrame(conn, req); err != nil {
 		return err
 	}
-	respRaw, err := readFrameWithTimeout(conn, time.Duration(c.cfg.HandshakeTimeout)*time.Second)
+	return nil
+}
+
+func (c *SecureTCPClient) readEncryptedPayload(conn net.Conn, sessionKey []byte, timeout time.Duration) ([]byte, error) {
+	respRaw, err := readFrameWithTimeout(conn, timeout)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var resp secureproto.DataFrame
 	if err := json.Unmarshal(respRaw, &resp); err != nil {
-		return err
+		return nil, err
 	}
 	reply, err := secureproto.Decrypt(sessionKey, resp.Ciphertext)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	log.Printf("server reply: %s", string(reply))
-	return nil
+	return reply, nil
 }
