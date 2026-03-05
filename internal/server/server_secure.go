@@ -88,6 +88,7 @@ func (s *Server) handleDataFrame(conn net.Conn, payload []byte, state *connState
 		return
 	}
 	if s.tunnel != nil && isIPPacket(plain) {
+		state.tunnelEnabled = true
 		if err := s.tunnel.WritePacket(plain); err != nil {
 			s.failConn(conn, "tunnel write failed")
 		}

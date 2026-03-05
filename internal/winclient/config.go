@@ -19,6 +19,8 @@ type Config struct {
 	TunName          string `json:"tun_name"`
 	TunCIDR          string `json:"tun_cidr"`
 	TunGateway       string `json:"tun_gateway"`
+	TunSetDefaultRoute bool `json:"tun_set_default_route"`
+	TunProbeOnly       bool `json:"tun_probe_only"`
 	ReconnectSec     int    `json:"reconnect_sec"`
 	PingIntervalSec  int    `json:"ping_interval_sec"`
 	HandshakeTimeout int    `json:"handshake_timeout_sec"`
@@ -33,6 +35,8 @@ func LoadConfig(path string) (Config, error) {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(b, &raw)
 	if cfg.ServerTCP == "" {
 		cfg.ServerTCP = "127.0.0.1:18443"
 	}
@@ -56,6 +60,15 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if cfg.TunGateway == "" {
 		cfg.TunGateway = "10.66.0.1"
+	}
+	// Safe defaults when fields are absent in config:
+	// - do not switch default route
+	// - run probe mode only (without dataplane loops)
+	if _, ok := raw["tun_set_default_route"]; !ok {
+		cfg.TunSetDefaultRoute = false
+	}
+	if _, ok := raw["tun_probe_only"]; !ok {
+		cfg.TunProbeOnly = true
 	}
 	if cfg.ReconnectSec <= 0 {
 		cfg.ReconnectSec = 3

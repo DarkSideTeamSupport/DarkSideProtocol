@@ -3,25 +3,22 @@
 package winclient
 
 import (
-	"fmt"
-	"time"
+	"errors"
 
 	"golang.zx2c4.com/wintun"
+	"golang.org/x/sys/windows"
 )
 
 type wireguardTunDevice struct {
 	adapter *wintun.Adapter
 	session wintun.Session
+	iface   string
 }
 
 func openTunnelDevice(name string) (TunnelDevice, error) {
-	pool, err := wintun.MakePool("DarkSidePool")
+	adapter, err := wintun.CreateAdapter(name, "Wintun", nil)
 	if err != nil {
-		return nil, err
-	}
-	adapter, _, err := pool.CreateAdapter(name, nil)
-	if err != nil {
-		adapter, err = pool.OpenAdapter(name)
+		adapter, err = wintun.OpenAdapter(name)
 		if err != nil {
 			return nil, err
 		}
@@ -34,6 +31,7 @@ func openTunnelDevice(name string) (TunnelDevice, error) {
 	return &wireguardTunDevice{
 		adapter: adapter,
 		session: session,
+		iface:   name,
 	}, nil
 }
 
@@ -41,8 +39,13 @@ func (w *wireguardTunDevice) ReadPacket() ([]byte, error) {
 	for {
 		packet, err := w.session.ReceivePacket()
 		if err != nil {
-			<-w.session.ReadWaitEvent()
-			time.Sleep(2 * time.Millisecond)
+			if !errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
+				return nil, err
+			}
+			_, waitErr := windows.WaitForSingleObject(w.session.ReadWaitEvent(), windows.INFINITE)
+			if waitErr != nil {
+				return nil, waitErr
+			}
 			continue
 		}
 		out := make([]byte, len(packet))
@@ -72,9 +75,5 @@ func (w *wireguardTunDevice) Close() error {
 }
 
 func (w *wireguardTunDevice) Name() (string, error) {
-	name, err := w.adapter.Name()
-	if err != nil {
-		return "", fmt.Errorf("read adapter name: %w", err)
-	}
-	return name, nil
+	return w.iface, nil
 }

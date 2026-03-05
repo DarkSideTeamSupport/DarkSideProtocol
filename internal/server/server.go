@@ -23,6 +23,7 @@ type Server struct {
 
 type connState struct {
 	secureReady bool
+	tunnelEnabled bool
 	sessionKey  []byte
 	lastSeen    time.Time
 	conn        net.Conn

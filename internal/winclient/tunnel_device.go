@@ -14,7 +14,7 @@ type TunnelDevice interface {
 	Name() (string, error)
 }
 
-func configureTunnelInterface(name string, cidr string, gateway string) error {
+func configureTunnelInterface(name string, cidr string, gateway string, setDefaultRoute bool) error {
 	if runtime.GOOS != "windows" {
 		return nil
 	}
@@ -22,14 +22,26 @@ func configureTunnelInterface(name string, cidr string, gateway string) error {
 	if err != nil {
 		return err
 	}
-	if err := runNetsh("interface", "ip", "set", "address", fmt.Sprintf("name=%s", name), "static", ip, mask, gateway); err != nil {
+	// In safe/probe mode we must not inject default gateway at all,
+	// otherwise Windows can auto-create 0.0.0.0/0 route through tunnel.
+	gw := "none"
+	if setDefaultRoute {
+		gw = gateway
+	}
+	if err := runNetsh("interface", "ip", "set", "address", fmt.Sprintf("name=%s", name), "static", ip, mask, gw); err != nil {
 		return err
 	}
-	_ = runNetsh("interface", "ipv4", "delete", "route", "0.0.0.0/0", fmt.Sprintf("interface=%s", name))
-	if err := runNetsh("interface", "ipv4", "add", "route", "0.0.0.0/0", fmt.Sprintf("interface=%s", name), fmt.Sprintf("nexthop=%s", gateway), "metric=5", "store=active"); err != nil {
-		return err
+	if setDefaultRoute {
+		_ = runNetsh("interface", "ipv4", "delete", "route", "0.0.0.0/0", fmt.Sprintf("interface=%s", name))
+		if err := runNetsh("interface", "ipv4", "add", "route", "0.0.0.0/0", fmt.Sprintf("interface=%s", name), fmt.Sprintf("nexthop=%s", gateway), "metric=5", "store=active"); err != nil {
+			return err
+		}
+		_ = runNetsh("interface", "ip", "set", "dns", fmt.Sprintf("name=%s", name), "static", "1.1.1.1")
+	} else {
+		_ = runNetsh("interface", "ipv4", "delete", "route", "0.0.0.0/0", fmt.Sprintf("interface=%s", name))
+		_ = runNetsh("interface", "ipv4", "delete", "route", "0.0.0.0/0", fmt.Sprintf("interface=%s", name), fmt.Sprintf("nexthop=%s", gateway))
+		_ = runNetsh("interface", "ip", "set", "dns", fmt.Sprintf("name=%s", name), "dhcp")
 	}
-	_ = runNetsh("interface", "ip", "set", "dns", fmt.Sprintf("name=%s", name), "static", "1.1.1.1")
 	return nil
 }
 

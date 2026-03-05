@@ -11,6 +11,8 @@
   "tun_name": "DarkSideTunnel",
   "tun_cidr": "10.66.0.2/24",
   "tun_gateway": "10.66.0.1",
+  "tun_set_default_route": true,
+  "tun_probe_only": false,
   "reconnect_sec": 3,
   "ping_interval_sec": 3,
   "handshake_timeout_sec": 5

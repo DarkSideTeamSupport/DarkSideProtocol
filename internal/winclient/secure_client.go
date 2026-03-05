@@ -121,10 +121,26 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 	if err != nil {
 		return err
 	}
-	if err := configureTunnelInterface(name, c.cfg.TunCIDR, c.cfg.TunGateway); err != nil {
+	if err := configureTunnelInterface(name, c.cfg.TunCIDR, c.cfg.TunGateway, c.cfg.TunSetDefaultRoute); err != nil {
 		return err
 	}
 	log.Printf("tunnel interface ready: %s (%s)", name, c.cfg.TunCIDR)
+	if c.cfg.TunProbeOnly {
+		log.Printf("tunnel probe mode enabled (dataplane disabled, default route switch=%v)", c.cfg.TunSetDefaultRoute)
+		ticker := time.NewTicker(time.Duration(c.cfg.PingIntervalSec) * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-ticker.C:
+				msg := fmt.Sprintf("tunnel-probe profile=%s device=%s ts=%d", c.cfg.ProfileName, c.cfg.DeviceName, time.Now().Unix())
+				if err := c.secureRequest(conn, sessionKey, []byte(msg)); err != nil {
+					return err
+				}
+			}
+		}
+	}
 
 	errCh := make(chan error, 2)
 	go func() {

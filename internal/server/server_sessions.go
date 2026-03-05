@@ -71,7 +71,7 @@ func (s *Server) findSecureConnState() *connState {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	for _, st := range s.conns {
-		if st.secureReady && st.conn != nil {
+		if st.secureReady && st.tunnelEnabled && st.conn != nil {
 			return st
 		}
 	}
