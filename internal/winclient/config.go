@@ -50,7 +50,7 @@ func LoadConfig(path string) (Config, error) {
 		cfg.ServerUDP = "127.0.0.1:18080"
 	}
 	if _, ok := raw["enable_multi_transport"]; !ok {
-		cfg.EnableMultiTransport = true
+		cfg.EnableMultiTransport = false
 	}
 	if cfg.KeyFile == "" {
 		cfg.KeyFile = "data/windows-client-key.json"

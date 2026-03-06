@@ -2,7 +2,7 @@
   "server_tcp": "77.221.153.190:18443",
   "server_udp": "77.221.153.190:18080",
   "protocol_version": "v2",
-  "enable_multi_transport": true,
+  "enable_multi_transport": false,
   "pre_shared_key": "DarkSide-PSK-2026-Change-This-Long-Secret",
   "server_public_key": "WcuQtipn/XpTwTeC/Ua32dPbSShcETZfT84unFhHbwo=",
   "client_private_key": "o5jLV+AqEtj2Rn5LJzd79l/2W/3FSoIc+EwIqRx/4RI=",
