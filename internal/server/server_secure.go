@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"crypto/rand"
 	"encoding/json"
 	"net"
@@ -31,10 +32,18 @@ func (s *Server) handleTCPPayload(conn net.Conn, payload []byte) {
 	state := s.getConnState(conn)
 	state.lastSeen = time.Now()
 	if !state.secureReady {
-		s.handleHelloFrame(conn, payload, state)
+		s.handlePreSecureFrame(conn, payload, state)
 		return
 	}
 	s.handleDataFrame(conn, payload, state)
+}
+
+func (s *Server) handlePreSecureFrame(conn net.Conn, payload []byte, state *connState) {
+	if state.awaitAuthV2 {
+		s.handleAuthV2Frame(conn, payload, state)
+		return
+	}
+	s.handleHelloFrame(conn, payload, state)
 }
 
 func (s *Server) handleHelloFrame(conn net.Conn, payload []byte, state *connState) {
@@ -63,8 +72,21 @@ func (s *Server) handleHelloFrame(conn net.Conn, payload []byte, state *connStat
 		return
 	}
 	state.sessionKey = secureproto.DeriveSessionKey(shared, clientNonce, serverNonce)
-	state.secureReady = true
 	state.conn = conn
+	state.protoVersion = hello.ProtoVersion
+
+	if hello.ProtoVersion == "v2" {
+		challenge := secureproto.BuildChallenge(state.sessionKey, serverNonce)
+		raw, _ := json.Marshal(challenge)
+		state.pendingTicket = challenge.Ticket
+		state.awaitAuthV2 = true
+		if err := tcp.WriteFrame(conn, raw); err != nil {
+			s.removeConnState(conn)
+		}
+		return
+	}
+
+	state.secureReady = true
 	ack := secureproto.BuildAck(state.sessionKey, serverNonce)
 	raw, _ := json.Marshal(ack)
 	if err := tcp.WriteFrame(conn, raw); err != nil {
@@ -72,7 +94,49 @@ func (s *Server) handleHelloFrame(conn net.Conn, payload []byte, state *connStat
 	}
 }
 
+func (s *Server) handleAuthV2Frame(conn net.Conn, payload []byte, state *connState) {
+	var auth secureproto.AuthFrame
+	if err := json.Unmarshal(payload, &auth); err != nil {
+		s.failConn(conn, "invalid auth_v2")
+		return
+	}
+	if auth.Type != secureproto.TypeAuth || auth.ProtoVersion != "v2" {
+		s.failConn(conn, "bad auth_v2 frame")
+		return
+	}
+	if !secureproto.VerifyAuthProof(state.sessionKey, state.pendingTicket, auth.Proof) {
+		s.failConn(conn, "auth_v2 proof mismatch")
+		return
+	}
+	state.awaitAuthV2 = false
+	state.pendingTicket = ""
+	state.secureReady = true
+	state.sessionID = s.newSessionID()
+	s.bindSessionID(state.sessionID, state)
+	ready := secureproto.BuildReady(state.sessionKey, state.sessionID)
+	raw, _ := json.Marshal(ready)
+	if err := tcp.WriteFrame(conn, raw); err != nil {
+		s.removeConnState(conn)
+	}
+}
+
+func (s *Server) newSessionID() string {
+	buf := make([]byte, 12)
+	if _, err := rand.Read(buf); err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
 func (s *Server) handleDataFrame(conn net.Conn, payload []byte, state *connState) {
+	if state.protoVersion == "v2" {
+		s.handleDataFrameV2(conn, payload, state)
+		return
+	}
+	s.handleDataFrameV1(conn, payload, state)
+}
+
+func (s *Server) handleDataFrameV1(conn net.Conn, payload []byte, state *connState) {
 	var req secureproto.DataFrame
 	if err := json.Unmarshal(payload, &req); err != nil || req.Type != secureproto.TypeData {
 		s.failConn(conn, "bad secure frame")
@@ -100,6 +164,30 @@ func (s *Server) handleDataFrame(conn net.Conn, payload []byte, state *connState
 	}
 }
 
+func (s *Server) handleDataFrameV2(conn net.Conn, payload []byte, state *connState) {
+	frame, plain, err := secureproto.ParseDataFrameV2(state.sessionKey, payload)
+	if err != nil {
+		s.failConn(conn, "bad v2 data frame")
+		return
+	}
+	if len(plain) > s.cfg.MaxPacketSize {
+		s.failConn(conn, "payload too large")
+		return
+	}
+	if s.tunnel != nil && frame.Channel == 1 && isIPPacket(plain) {
+		state.tunnelEnabled = true
+		if err := s.tunnel.WritePacket(plain); err != nil {
+			s.failConn(conn, "tunnel write failed")
+		}
+		return
+	}
+	reply := s.decorateReply(plain)
+	mode := secureproto.SelectObfsMode(frame.Sequence+1, len(reply))
+	if err := s.sendSecurePayloadV2(state, frame.Channel, frame.Sequence+1, mode, reply); err != nil {
+		s.removeConnState(conn)
+	}
+}
+
 func (s *Server) sendSecurePayload(state *connState, payload []byte) error {
 	enc, err := secureproto.Encrypt(state.sessionKey, payload)
 	if err != nil {
@@ -112,6 +200,16 @@ func (s *Server) sendSecurePayload(state *connState, payload []byte) error {
 	state.writeMu.Lock()
 	defer state.writeMu.Unlock()
 	return tcp.WriteFrame(state.conn, resp)
+}
+
+func (s *Server) sendSecurePayloadV2(state *connState, channel uint8, seq uint32, mode string, payload []byte) error {
+	raw, err := secureproto.BuildDataFrameV2(state.sessionKey, channel, seq, mode, payload, 64)
+	if err != nil {
+		return err
+	}
+	state.writeMu.Lock()
+	defer state.writeMu.Unlock()
+	return tcp.WriteFrame(state.conn, raw)
 }
 
 func isIPPacket(packet []byte) bool {

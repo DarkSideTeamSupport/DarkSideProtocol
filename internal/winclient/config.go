@@ -8,6 +8,9 @@ import (
 
 type Config struct {
 	ServerTCP        string `json:"server_tcp"`
+	ServerUDP        string `json:"server_udp"`
+	ProtocolVersion  string `json:"protocol_version"`
+	EnableMultiTransport bool `json:"enable_multi_transport"`
 	PreSharedKey     string `json:"pre_shared_key"`
 	ServerPublicKey  string `json:"server_public_key"`
 	ClientPrivateKey string `json:"client_private_key"`
@@ -39,6 +42,15 @@ func LoadConfig(path string) (Config, error) {
 	_ = json.Unmarshal(b, &raw)
 	if cfg.ServerTCP == "" {
 		cfg.ServerTCP = "127.0.0.1:18443"
+	}
+	if cfg.ProtocolVersion == "" {
+		cfg.ProtocolVersion = "v2"
+	}
+	if cfg.ServerUDP == "" {
+		cfg.ServerUDP = "127.0.0.1:18080"
+	}
+	if _, ok := raw["enable_multi_transport"]; !ok {
+		cfg.EnableMultiTransport = true
 	}
 	if cfg.KeyFile == "" {
 		cfg.KeyFile = "data/windows-client-key.json"

@@ -6,14 +6,19 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"darksideprotocol/internal/secureproto"
 	"darksideprotocol/internal/transport/tcp"
+	"darksideprotocol/internal/transport/udp"
 )
 
 type SecureTCPClient struct {
-	cfg Config
+	cfg      Config
+	sessionID string
+	udpClient *udp.Client
+	seqCounter uint32
 }
 
 func NewSecureTCPClient(cfg Config) *SecureTCPClient {
@@ -44,6 +49,11 @@ func (c *SecureTCPClient) runOneSession(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	c.closeUDP()
+	if err := c.initUDPPlane(sessionKey); err != nil {
+		log.Printf("udp plane disabled: %v", err)
+	}
+	defer c.closeUDP()
 	log.Printf("secure session established with %s", c.cfg.ServerTCP)
 	if c.cfg.EnableTunnel {
 		return c.runTunnelSession(ctx, conn, sessionKey)
@@ -65,7 +75,7 @@ func (c *SecureTCPClient) runOneSession(ctx context.Context) error {
 }
 
 func (c *SecureTCPClient) doHandshake(conn net.Conn) ([]byte, error) {
-	hello, clientNonce, err := secureproto.NewHello(c.cfg.ClientPublicKey, c.cfg.PreSharedKey)
+	hello, clientNonce, err := secureproto.NewHello(c.cfg.ClientPublicKey, c.cfg.PreSharedKey, c.cfg.ProtocolVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -79,6 +89,9 @@ func (c *SecureTCPClient) doHandshake(conn net.Conn) ([]byte, error) {
 		return nil, err
 	}
 	var ack secureproto.AckFrame
+	if c.cfg.ProtocolVersion == "v2" {
+		return c.doHandshakeV2(conn, payload, clientNonce)
+	}
 	if err := json.Unmarshal(payload, &ack); err != nil {
 		return nil, err
 	}
@@ -98,8 +111,43 @@ func (c *SecureTCPClient) doHandshake(conn net.Conn) ([]byte, error) {
 	return sessionKey, nil
 }
 
+func (c *SecureTCPClient) doHandshakeV2(conn net.Conn, firstPayload []byte, clientNonce []byte) ([]byte, error) {
+	challenge, serverNonce, err := secureproto.ParseChallenge(firstPayload)
+	if err != nil {
+		return nil, err
+	}
+	shared, err := secureproto.SharedSecret(c.cfg.ClientPrivateKey, c.cfg.ServerPublicKey)
+	if err != nil {
+		return nil, err
+	}
+	sessionKey := secureproto.DeriveSessionKey(shared, clientNonce, serverNonce)
+	auth := secureproto.AuthFrame{
+		Type:         secureproto.TypeAuth,
+		ProtoVersion: "v2",
+		Proof:        secureproto.BuildAuthProof(sessionKey, challenge.Ticket),
+	}
+	rawAuth, _ := json.Marshal(auth)
+	if err := tcp.WriteFrame(conn, rawAuth); err != nil {
+		return nil, err
+	}
+
+	rawReady, err := readFrameWithTimeout(conn, time.Duration(c.cfg.HandshakeTimeout)*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	var ready secureproto.ReadyFrame
+	if err := json.Unmarshal(rawReady, &ready); err != nil {
+		return nil, err
+	}
+	if !secureproto.VerifyReady(sessionKey, ready) {
+		return nil, fmt.Errorf("ready_v2 verification failed")
+	}
+	c.sessionID = ready.SessionID
+	return sessionKey, nil
+}
+
 func (c *SecureTCPClient) secureRequest(conn net.Conn, sessionKey []byte, plain []byte) error {
-	if err := c.sendEncryptedPayload(conn, sessionKey, plain); err != nil {
+	if err := c.sendEncryptedPayload(conn, sessionKey, plain, 2); err != nil {
 		return err
 	}
 	reply, err := c.readEncryptedPayload(conn, sessionKey, time.Duration(c.cfg.HandshakeTimeout)*time.Second)
@@ -153,7 +201,7 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 			if len(pkt) == 0 {
 				continue
 			}
-			if err := c.sendEncryptedPayload(conn, sessionKey, pkt); err != nil {
+			if err := c.sendEncryptedPayload(conn, sessionKey, pkt, 1); err != nil {
 				errCh <- err
 				return
 			}
@@ -185,7 +233,24 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 	}
 }
 
-func (c *SecureTCPClient) sendEncryptedPayload(conn net.Conn, sessionKey []byte, plain []byte) error {
+func (c *SecureTCPClient) sendEncryptedPayload(conn net.Conn, sessionKey []byte, plain []byte, channel uint8) error {
+	if c.cfg.ProtocolVersion == "v2" {
+		seq := c.nextSeq()
+		mode := secureproto.SelectObfsMode(seq, len(plain))
+		raw, err := secureproto.BuildDataFrameV2(sessionKey, channel, seq, mode, plain, 64)
+		if err != nil {
+			return err
+		}
+		if channel == 1 && c.shouldUseUDP(seq) && c.udpClient != nil && c.sessionID != "" {
+			dgram, err := secureproto.BuildDatagramFrameV2(sessionKey, c.sessionID, channel, seq, mode, plain, 64)
+			if err == nil {
+				if err := c.udpClient.Send(dgram); err == nil {
+					return nil
+				}
+			}
+		}
+		return tcp.WriteFrame(conn, raw)
+	}
 	ciphertext, err := secureproto.Encrypt(sessionKey, plain)
 	if err != nil {
 		return err
@@ -205,6 +270,10 @@ func (c *SecureTCPClient) readEncryptedPayload(conn net.Conn, sessionKey []byte,
 	if err != nil {
 		return nil, err
 	}
+	if c.cfg.ProtocolVersion == "v2" {
+		_, payload, err := secureproto.ParseDataFrameV2(sessionKey, respRaw)
+		return payload, err
+	}
 	var resp secureproto.DataFrame
 	if err := json.Unmarshal(respRaw, &resp); err != nil {
 		return nil, err
@@ -214,4 +283,42 @@ func (c *SecureTCPClient) readEncryptedPayload(conn net.Conn, sessionKey []byte,
 		return nil, err
 	}
 	return reply, nil
+}
+
+func (c *SecureTCPClient) shouldUseUDP(seq uint32) bool {
+	if !c.cfg.EnableMultiTransport {
+		return false
+	}
+	if c.cfg.ServerUDP == "" {
+		return false
+	}
+	return seq%4 != 0
+}
+
+func (c *SecureTCPClient) nextSeq() uint32 {
+	return atomic.AddUint32(&c.seqCounter, 1)
+}
+
+func (c *SecureTCPClient) initUDPPlane(sessionKey []byte) error {
+	if c.cfg.ProtocolVersion != "v2" || !c.cfg.EnableMultiTransport || c.cfg.ServerUDP == "" || c.sessionID == "" {
+		return nil
+	}
+	uc, err := udp.Dial(c.cfg.ServerUDP)
+	if err != nil {
+		return err
+	}
+	c.udpClient = uc
+	seq := c.nextSeq()
+	raw, err := secureproto.BuildDatagramFrameV2(sessionKey, c.sessionID, 2, seq, "bind", []byte("bind"), 24)
+	if err != nil {
+		return err
+	}
+	return c.udpClient.Send(raw)
+}
+
+func (c *SecureTCPClient) closeUDP() {
+	if c.udpClient != nil {
+		_ = c.udpClient.Close()
+		c.udpClient = nil
+	}
 }

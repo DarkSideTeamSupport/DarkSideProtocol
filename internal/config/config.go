@@ -9,6 +9,7 @@ import (
 type ServerConfig struct {
 	ListenUDP       string `json:"listen_udp"`
 	ListenTCP       string `json:"listen_tcp"`
+	ProtocolVersion string `json:"protocol_version"`
 	PreSharedKey    string `json:"pre_shared_key"`
 	ServerPrivateKey string `json:"server_private_key"`
 	ServerPublicKey  string `json:"server_public_key"`
@@ -30,6 +31,7 @@ type ClientConfig struct {
 	ServerAddress string `json:"server_address"`
 	ServerUDP     string `json:"server_udp"`
 	ServerTCP     string `json:"server_tcp"`
+	ProtocolVersion string `json:"protocol_version"`
 	PreSharedKey  string `json:"pre_shared_key"`
 	ServerPublicKey string `json:"server_public_key"`
 	ClientPrivateKey string `json:"client_private_key"`
@@ -63,6 +65,9 @@ func LoadServerConfig(path string) (ServerConfig, error) {
 	}
 	if cfg.ListenTCP == "" {
 		cfg.ListenTCP = ":18443"
+	}
+	if cfg.ProtocolVersion == "" {
+		cfg.ProtocolVersion = "v2"
 	}
 	if cfg.MaxPacketSize == 0 {
 		cfg.MaxPacketSize = 1500
@@ -100,6 +105,9 @@ func LoadClientConfig(path string) (ClientConfig, error) {
 	}
 	if cfg.TransportMode == "" {
 		cfg.TransportMode = "udp"
+	}
+	if cfg.ProtocolVersion == "" {
+		cfg.ProtocolVersion = "v2"
 	}
 	if cfg.TunName == "" {
 		cfg.TunName = "dsp0"

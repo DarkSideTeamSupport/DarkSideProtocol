@@ -18,12 +18,21 @@ type Server struct {
 	obfsCfg obfs.Config
 	connMu  sync.Mutex
 	conns   map[net.Conn]*connState
+	sidMu   sync.RWMutex
+	bySID   map[string]*connState
+	udpMu   sync.RWMutex
+	udpSrv  *udp.Server
 	tunnel  tunnelDevice
 }
 
 type connState struct {
 	secureReady bool
 	tunnelEnabled bool
+	protoVersion string
+	awaitAuthV2  bool
+	pendingTicket string
+	sessionID    string
+	udpAddr      *net.UDPAddr
 	sessionKey  []byte
 	lastSeen    time.Time
 	conn        net.Conn
@@ -47,6 +56,7 @@ func New(cfg config.ServerConfig) (*Server, error) {
 			MaxJitterMS: 15,
 		},
 		conns: make(map[net.Conn]*connState),
+		bySID: make(map[string]*connState),
 		tunnel: tun,
 	}, nil
 }
@@ -79,11 +89,9 @@ func (s *Server) Run(ctx context.Context) error {
 				return
 			}
 			log.Printf("udp listener started on %s", s.cfg.ListenUDP)
+			s.setUDPSrv(udpSrv)
 			err = udpSrv.Serve(ctx, func(addr *net.UDPAddr, payload []byte) {
-				if len(payload) > s.cfg.MaxPacketSize {
-					return
-				}
-				_ = udpSrv.WriteTo(addr, s.decorateReply(payload))
+				s.handleUDPPayload(addr, payload)
 			})
 			if err != nil {
 				errCh <- err
@@ -130,4 +138,16 @@ func (s *Server) decorateReply(payload []byte) []byte {
 	out = obfs.ApplyPadding(s.obfsCfg, out)
 	obfs.SleepJitter(s.obfsCfg)
 	return out
+}
+
+func (s *Server) setUDPSrv(srv *udp.Server) {
+	s.udpMu.Lock()
+	defer s.udpMu.Unlock()
+	s.udpSrv = srv
+}
+
+func (s *Server) getUDPSrv() *udp.Server {
+	s.udpMu.RLock()
+	defer s.udpMu.RUnlock()
+	return s.udpSrv
 }

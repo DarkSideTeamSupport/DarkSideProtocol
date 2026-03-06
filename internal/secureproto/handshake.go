@@ -19,6 +19,7 @@ const (
 
 type HelloFrame struct {
 	Type            string `json:"type"`
+	ProtoVersion    string `json:"proto_version"`
 	ClientPublicKey string `json:"client_public_key"`
 	ClientNonce     string `json:"client_nonce"`
 	Timestamp       int64  `json:"timestamp"`
@@ -36,15 +37,19 @@ type DataFrame struct {
 	Ciphertext string `json:"ciphertext"`
 }
 
-func NewHello(clientPublicKey string, preSharedKey string) (HelloFrame, []byte, error) {
+func NewHello(clientPublicKey string, preSharedKey string, protoVersion string) (HelloFrame, []byte, error) {
 	nonce := make([]byte, 16)
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return HelloFrame{}, nil, err
+	}
+	if protoVersion == "" {
+		protoVersion = "v1"
 	}
 	timestamp := time.Now().Unix()
 	authTag := BuildHelloAuth(preSharedKey, clientPublicKey, nonce, timestamp)
 	return HelloFrame{
 		Type:            TypeHello,
+		ProtoVersion:    protoVersion,
 		ClientPublicKey: clientPublicKey,
 		ClientNonce:     base64.StdEncoding.EncodeToString(nonce),
 		Timestamp:       timestamp,
@@ -63,6 +68,9 @@ func ParseHello(payload []byte) (HelloFrame, []byte, error) {
 	}
 	if h.Type != TypeHello || h.ClientPublicKey == "" || h.ClientNonce == "" {
 		return HelloFrame{}, nil, fmt.Errorf("invalid hello")
+	}
+	if h.ProtoVersion == "" {
+		h.ProtoVersion = "v1"
 	}
 	nonce, err := base64.StdEncoding.DecodeString(h.ClientNonce)
 	if err != nil || len(nonce) != 16 {
