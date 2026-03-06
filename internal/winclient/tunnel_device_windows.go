@@ -19,14 +19,14 @@ type wireguardTunDevice struct {
 }
 
 func openTunnelDevice(name string) (TunnelDevice, error) {
-	adapter, err := wintun.CreateAdapter(name, "Wintun", nil)
+	adapter, err := wintun.OpenAdapter(name)
 	if err != nil {
-		adapter, err = wintun.OpenAdapter(name)
+		adapter, err = wintun.CreateAdapter(name, "Wintun", nil)
 		if err != nil {
 			return nil, err
 		}
 	}
-	session, err := adapter.StartSession(0x800000)
+	session, err := adapter.StartSession(0x400000)
 	if err != nil {
 		adapter.Close()
 		return nil, err

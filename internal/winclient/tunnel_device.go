@@ -39,6 +39,7 @@ func configureTunnelInterface(name string, cidr string, gateway string, setDefau
 	if err := runNetsh("interface", "ip", "set", "address", fmt.Sprintf("name=%s", name), "static", ip, mask, gw); err != nil {
 		return err
 	}
+	_ = runNetsh("interface", "ipv4", "set", "subinterface", name, "mtu=1380", "store=active")
 	if setDefaultRoute {
 		if err := ensureServerBypassRoute(serverEndpoint); err != nil {
 			return err

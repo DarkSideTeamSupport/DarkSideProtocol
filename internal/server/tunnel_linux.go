@@ -69,10 +69,12 @@ func configureLinuxTunnel(cfg config.ServerConfig, name string) error {
 	if upstream == "" {
 		return fmt.Errorf("cannot detect upstream interface")
 	}
-	_ = runCmd("iptables", "-t", "nat", "-C", "POSTROUTING", "-s", cfg.TunnelSubnet, "-o", upstream, "-j", "MASQUERADE")
-	_ = runCmd("iptables", "-A", "FORWARD", "-i", name, "-j", "ACCEPT")
-	_ = runCmd("iptables", "-A", "FORWARD", "-o", name, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
-	_ = runCmd("iptables", "-t", "nat", "-A", "POSTROUTING", "-s", cfg.TunnelSubnet, "-o", upstream, "-j", "MASQUERADE")
+	ipt := detectIPTablesBin()
+	ensureIPTablesRule(ipt, []string{"-A", "FORWARD", "-i", name, "-j", "ACCEPT"}, []string{"-C", "FORWARD", "-i", name, "-j", "ACCEPT"})
+	ensureIPTablesRule(ipt, []string{"-A", "FORWARD", "-o", name, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"}, []string{"-C", "FORWARD", "-o", name, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"})
+	ensureIPTablesRule(ipt, []string{"-t", "nat", "-A", "POSTROUTING", "-s", cfg.TunnelSubnet, "-o", upstream, "-j", "MASQUERADE"}, []string{"-t", "nat", "-C", "POSTROUTING", "-s", cfg.TunnelSubnet, "-o", upstream, "-j", "MASQUERADE"})
+	// Clamp MSS to path MTU to avoid "IP changed but sites hang" on some networks.
+	ensureIPTablesRule(ipt, []string{"-t", "mangle", "-A", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, []string{"-t", "mangle", "-C", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"})
 	return nil
 }
 
@@ -92,6 +94,23 @@ func runCmdOut(bin string, args ...string) (string, error) {
 		return "", fmt.Errorf("%s %v failed: %v (%s)", bin, args, err, string(out))
 	}
 	return string(out), nil
+}
+
+func detectIPTablesBin() string {
+	if _, err := runCmdOut("iptables-legacy", "-S"); err == nil {
+		return "iptables-legacy"
+	}
+	return "iptables"
+}
+
+func ensureIPTablesRule(bin string, addArgs []string, checkArgs []string) {
+	if bin == "" {
+		return
+	}
+	if _, err := runCmdOut(bin, checkArgs...); err == nil {
+		return
+	}
+	_ = runCmd(bin, addArgs...)
 }
 
 func linuxInterfaceExists(name string) bool {
