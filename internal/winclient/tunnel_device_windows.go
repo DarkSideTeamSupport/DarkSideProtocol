@@ -4,6 +4,8 @@ package winclient
 
 import (
 	"errors"
+	"fmt"
+	"sync/atomic"
 
 	"golang.zx2c4.com/wintun"
 	"golang.org/x/sys/windows"
@@ -13,6 +15,7 @@ type wireguardTunDevice struct {
 	adapter *wintun.Adapter
 	session wintun.Session
 	iface   string
+	closed  atomic.Bool
 }
 
 func openTunnelDevice(name string) (TunnelDevice, error) {
@@ -37,14 +40,21 @@ func openTunnelDevice(name string) (TunnelDevice, error) {
 
 func (w *wireguardTunDevice) ReadPacket() ([]byte, error) {
 	for {
+		if w.closed.Load() {
+			return nil, fmt.Errorf("tunnel closed")
+		}
 		packet, err := w.session.ReceivePacket()
 		if err != nil {
 			if !errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
 				return nil, err
 			}
-			_, waitErr := windows.WaitForSingleObject(w.session.ReadWaitEvent(), windows.INFINITE)
+			waitEvent := w.session.ReadWaitEvent()
+			_, waitErr := windows.WaitForSingleObject(waitEvent, 200)
 			if waitErr != nil {
 				return nil, waitErr
+			}
+			if w.closed.Load() {
+				return nil, fmt.Errorf("tunnel closed")
 			}
 			continue
 		}
@@ -59,6 +69,9 @@ func (w *wireguardTunDevice) ReadPacket() ([]byte, error) {
 }
 
 func (w *wireguardTunDevice) WritePacket(packet []byte) error {
+	if w.closed.Load() {
+		return fmt.Errorf("tunnel closed")
+	}
 	sendPacket, err := w.session.AllocateSendPacket(len(packet))
 	if err != nil {
 		return err
@@ -69,6 +82,9 @@ func (w *wireguardTunDevice) WritePacket(packet []byte) error {
 }
 
 func (w *wireguardTunDevice) Close() error {
+	if !w.closed.CompareAndSwap(false, true) {
+		return nil
+	}
 	w.session.End()
 	w.adapter.Close()
 	return nil

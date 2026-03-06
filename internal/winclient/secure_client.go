@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -163,7 +164,11 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 	if err != nil {
 		return err
 	}
-	defer dev.Close()
+	sessionCtx, cancel := context.WithCancel(ctx)
+	defer func() {
+		cancel()
+		_ = dev.Close()
+	}()
 
 	name, err := dev.Name()
 	if err != nil {
@@ -191,10 +196,21 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 	}
 
 	errCh := make(chan error, 3)
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
+			select {
+			case <-sessionCtx.Done():
+				return
+			default:
+			}
 			pkt, err := dev.ReadPacket()
 			if err != nil {
+				if sessionCtx.Err() != nil {
+					return
+				}
 				errCh <- err
 				return
 			}
@@ -202,16 +218,32 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 				continue
 			}
 			if err := c.sendEncryptedPayload(conn, sessionKey, pkt, 1); err != nil {
+				if sessionCtx.Err() != nil {
+					return
+				}
 				errCh <- err
 				return
 			}
 		}
 	}()
 
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
+			select {
+			case <-sessionCtx.Done():
+				return
+			default:
+			}
 			pkt, err := c.readEncryptedPayload(conn, sessionKey, 60*time.Second)
 			if err != nil {
+				if sessionCtx.Err() != nil {
+					return
+				}
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					continue
+				}
 				errCh <- err
 				return
 			}
@@ -219,16 +251,21 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 				continue
 			}
 			if err := dev.WritePacket(pkt); err != nil {
+				if sessionCtx.Err() != nil {
+					return
+				}
 				errCh <- err
 				return
 			}
 		}
 	}()
 
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-sessionCtx.Done():
 				return
 			default:
 			}
@@ -240,6 +277,9 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 			if err != nil {
 				if ne, ok := err.(net.Error); ok && ne.Timeout() {
 					continue
+				}
+				if sessionCtx.Err() != nil {
+					return
 				}
 				continue
 			}
@@ -254,6 +294,9 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 				continue
 			}
 			if err := dev.WritePacket(payload); err != nil {
+				if sessionCtx.Err() != nil {
+					return
+				}
 				errCh <- err
 				return
 			}
@@ -262,8 +305,12 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 
 	select {
 	case <-ctx.Done():
+		cancel()
+		wg.Wait()
 		return nil
 	case err := <-errCh:
+		cancel()
+		wg.Wait()
 		return err
 	}
 }
