@@ -60,8 +60,14 @@ func configureLinuxTunnel(cfg config.ServerConfig, name string) error {
 	}
 	_ = runCmd("sysctl", "-w", "net.ipv4.ip_forward=1")
 	upstream := cfg.UpstreamInterface
+	if upstream == "" || !linuxInterfaceExists(upstream) {
+		detected, err := detectDefaultLinuxUpstream()
+		if err == nil && detected != "" {
+			upstream = detected
+		}
+	}
 	if upstream == "" {
-		upstream = "eth0"
+		return fmt.Errorf("cannot detect upstream interface")
 	}
 	_ = runCmd("iptables", "-t", "nat", "-C", "POSTROUTING", "-s", cfg.TunnelSubnet, "-o", upstream, "-j", "MASQUERADE")
 	_ = runCmd("iptables", "-A", "FORWARD", "-i", name, "-j", "ACCEPT")
@@ -77,4 +83,35 @@ func runCmd(bin string, args ...string) error {
 		return fmt.Errorf("%s %v failed: %v (%s)", bin, args, err, string(out))
 	}
 	return nil
+}
+
+func runCmdOut(bin string, args ...string) (string, error) {
+	cmd := exec.Command(bin, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%s %v failed: %v (%s)", bin, args, err, string(out))
+	}
+	return string(out), nil
+}
+
+func linuxInterfaceExists(name string) bool {
+	if name == "" {
+		return false
+	}
+	_, err := runCmdOut("ip", "link", "show", "dev", name)
+	return err == nil
+}
+
+func detectDefaultLinuxUpstream() (string, error) {
+	out, err := runCmdOut("ip", "route", "show", "default")
+	if err != nil {
+		return "", err
+	}
+	fields := strings.Fields(out)
+	for i := 0; i < len(fields)-1; i++ {
+		if fields[i] == "dev" {
+			return fields[i+1], nil
+		}
+	}
+	return "", fmt.Errorf("default route interface not found")
 }

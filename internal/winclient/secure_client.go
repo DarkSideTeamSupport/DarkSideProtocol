@@ -174,9 +174,10 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 	if err != nil {
 		return err
 	}
-	if err := configureTunnelInterface(name, c.cfg.TunCIDR, c.cfg.TunGateway, c.cfg.TunSetDefaultRoute); err != nil {
+	if err := configureTunnelInterface(name, c.cfg.TunCIDR, c.cfg.TunGateway, c.cfg.TunSetDefaultRoute, c.cfg.ServerTCP); err != nil {
 		return err
 	}
+	defer cleanupTunnelInterface(name, c.cfg.TunGateway, c.cfg.TunSetDefaultRoute, c.cfg.ServerTCP)
 	log.Printf("tunnel interface ready: %s (%s)", name, c.cfg.TunCIDR)
 	if c.cfg.TunProbeOnly {
 		log.Printf("tunnel probe mode enabled (dataplane disabled, default route switch=%v)", c.cfg.TunSetDefaultRoute)
