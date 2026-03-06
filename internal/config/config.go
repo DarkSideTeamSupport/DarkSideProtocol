@@ -32,6 +32,7 @@ type ClientConfig struct {
 	ServerUDP     string `json:"server_udp"`
 	ServerTCP     string `json:"server_tcp"`
 	ProtocolVersion string `json:"protocol_version"`
+	EnableMultiTransport bool `json:"enable_multi_transport"`
 	PreSharedKey  string `json:"pre_shared_key"`
 	ServerPublicKey string `json:"server_public_key"`
 	ClientPrivateKey string `json:"client_private_key"`
@@ -100,9 +101,15 @@ func LoadServerConfig(path string) (ServerConfig, error) {
 
 func LoadClientConfig(path string) (ClientConfig, error) {
 	var cfg ClientConfig
-	if err := loadJSON(path, &cfg); err != nil {
-		return ClientConfig{}, err
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ClientConfig{}, fmt.Errorf("read %s: %w", path, err)
 	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return ClientConfig{}, fmt.Errorf("parse %s: %w", path, err)
+	}
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(b, &raw)
 	if cfg.TransportMode == "" {
 		cfg.TransportMode = "udp"
 	}
@@ -120,6 +127,9 @@ func LoadClientConfig(path string) (ClientConfig, error) {
 	}
 	if cfg.KeyFile == "" {
 		cfg.KeyFile = "data/client-key.json"
+	}
+	if _, ok := raw["enable_multi_transport"]; !ok {
+		cfg.EnableMultiTransport = true
 	}
 	return cfg, nil
 }

@@ -190,7 +190,7 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 		}
 	}
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	go func() {
 		for {
 			pkt, err := dev.ReadPacket()
@@ -219,6 +219,41 @@ func (c *SecureTCPClient) runTunnelSession(ctx context.Context, conn net.Conn, s
 				continue
 			}
 			if err := dev.WritePacket(pkt); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			if c.udpClient == nil || c.sessionID == "" {
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			raw, err := c.udpClient.Receive(3 * time.Second)
+			if err != nil {
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					continue
+				}
+				continue
+			}
+			frame, payload, err := secureproto.ParseDatagramFrameV2(sessionKey, raw)
+			if err != nil {
+				continue
+			}
+			if frame.SessionID != c.sessionID || frame.Channel != 1 {
+				continue
+			}
+			if len(payload) == 0 {
+				continue
+			}
+			if err := dev.WritePacket(payload); err != nil {
 				errCh <- err
 				return
 			}
