@@ -1,6 +1,6 @@
 {
-  "server_tcp": "127.0.0.1:18443",
-  "server_udp": "127.0.0.1:18080",
+  "server_tcp": "77.221.153.190:18443",
+  "server_udp": "77.221.153.190:18080",
   "protocol_version": "v2",
   "enable_multi_transport": true,
   "pre_shared_key": "CHANGE-ME-GENERATE-NEW-PSK-BEFORE-PRODUCTION",
