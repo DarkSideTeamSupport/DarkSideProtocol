@@ -1,9 +1,10 @@
 package server
 
 import (
-	"encoding/base64"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
+	"log"
 	"net"
 	"time"
 
@@ -114,6 +115,7 @@ func (s *Server) handleAuthV2Frame(conn net.Conn, payload []byte, state *connSta
 	state.sessionID = s.newSessionID()
 	s.bindSessionID(state.sessionID, state)
 	ready := secureproto.BuildReady(state.sessionKey, state.sessionID)
+	log.Printf("handshake_v2: sending ready sessionID=%s mac=%s", state.sessionID, ready.Mac)
 	raw, _ := json.Marshal(ready)
 	if err := tcp.WriteFrame(conn, raw); err != nil {
 		s.removeConnState(conn)

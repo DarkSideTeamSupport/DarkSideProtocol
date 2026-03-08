@@ -140,7 +140,9 @@ func (c *SecureTCPClient) doHandshakeV2(conn net.Conn, firstPayload []byte, clie
 	if err := json.Unmarshal(rawReady, &ready); err != nil {
 		return nil, err
 	}
-	if !secureproto.VerifyReady(sessionKey, ready) {
+	ok, _, computedMAC := secureproto.VerifyReady(sessionKey, ready)
+	log.Printf("handshake_v2 debug: sessionID=%s received_mac=%s computed_mac=%s ok=%v", ready.SessionID, ready.Mac, computedMAC, ok)
+	if !ok {
 		return nil, fmt.Errorf("ready_v2 verification failed")
 	}
 	c.sessionID = ready.SessionID
