@@ -57,10 +57,16 @@ type PanelConfig struct {
 }
 
 func LoadServerConfig(path string) (ServerConfig, error) {
-	var cfg ServerConfig
-	if err := loadJSON(path, &cfg); err != nil {
-		return ServerConfig{}, err
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ServerConfig{}, fmt.Errorf("read %s: %w", path, err)
 	}
+	var cfg ServerConfig
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return ServerConfig{}, fmt.Errorf("parse %s: %w", path, err)
+	}
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(b, &raw)
 	if cfg.ListenUDP == "" {
 		cfg.ListenUDP = ":18080"
 	}
@@ -88,8 +94,8 @@ func LoadServerConfig(path string) (ServerConfig, error) {
 	if cfg.TunnelSubnet == "" {
 		cfg.TunnelSubnet = "10.66.0.0/24"
 	}
-	if !cfg.EnableTunnel {
-		// Default to tunnel mode for full VPN behavior.
+	// EnableTunnel: true по умолчанию, но можно явно выключить в конфиге
+	if _, ok := raw["enable_tunnel"]; !ok {
 		cfg.EnableTunnel = true
 	}
 	if !cfg.EnableUDP && !cfg.EnableTCP {

@@ -61,7 +61,8 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.DeviceName == "" {
 		cfg.DeviceName = "win-client"
 	}
-	if !cfg.EnableTunnel {
+	// EnableTunnel: true по умолчанию, но можно явно выключить
+	if _, ok := raw["enable_tunnel"]; !ok {
 		cfg.EnableTunnel = true
 	}
 	if cfg.TunName == "" {
@@ -75,12 +76,12 @@ func LoadConfig(path string) (Config, error) {
 	}
 	// Safe defaults when fields are absent in config:
 	// - do not switch default route
-	// - run probe mode only (without dataplane loops)
+	// - probe mode disabled by default (full tunnel mode)
 	if _, ok := raw["tun_set_default_route"]; !ok {
 		cfg.TunSetDefaultRoute = false
 	}
 	if _, ok := raw["tun_probe_only"]; !ok {
-		cfg.TunProbeOnly = true
+		cfg.TunProbeOnly = false
 	}
 	if cfg.ReconnectSec <= 0 {
 		cfg.ReconnectSec = 3

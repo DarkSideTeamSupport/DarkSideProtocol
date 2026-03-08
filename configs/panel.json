@@ -1,7 +1,7 @@
 {
   "listen_addr": ":2053",
   "admin_user": "admin",
-  "admin_password": "admin",
+  "admin_password": "CHANGE-ME-ADMIN-PASSWORD",
   "state_file": "data/panel-state.json",
   "server_log_path": "/var/log/dsp-server.log",
   "enable_service_op": true,
