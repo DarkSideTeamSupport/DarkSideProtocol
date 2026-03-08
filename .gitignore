@@ -3,3 +3,4 @@ web-ui/dist/
 data/
 bin/
 *.log
+*.rar
