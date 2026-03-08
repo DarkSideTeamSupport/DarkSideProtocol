@@ -89,6 +89,13 @@ func VerifyReady(sessionKey []byte, frame ReadyFrame) bool {
 	if frame.Type != TypeReady || frame.ProtoVersion != "v2" {
 		return false
 	}
-	expected := BuildReady(sessionKey, frame.SessionID)
-	return hmac.Equal([]byte(expected.Mac), []byte(frame.Mac))
+	expectedMAC, err := base64.StdEncoding.DecodeString(frame.Mac)
+	if err != nil {
+		return false
+	}
+	mac := hmac.New(sha256.New, sessionKey)
+	mac.Write([]byte("ready-v2"))
+	mac.Write([]byte(frame.SessionID))
+	want := mac.Sum(nil)
+	return hmac.Equal(want, expectedMAC)
 }
