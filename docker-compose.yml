@@ -5,13 +5,12 @@ services:
       dockerfile: Dockerfile.server
     container_name: dsp-server
     restart: unless-stopped
-    ports:
-      - "18080:18080/udp"
-      - "18443:18443/tcp"
+    network_mode: host
     volumes:
       - ./configs/server.json:/app/configs/server.json:ro
     cap_add:
       - NET_ADMIN
+    privileged: true
     devices:
       - /dev/net/tun:/dev/net/tun
     sysctls:
